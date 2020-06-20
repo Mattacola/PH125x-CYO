@@ -1,0 +1,54 @@
+---
+title: "PH125.x Capstone PYO"
+author: "Edward Mattacola"
+date: "15/06/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Pokemon is a global multimedia brand spanning games, TV, movies, books and others. Originally introduced to the world as a pair of games for the Nintendo Gameboy in 1996, it has since spawned 17 sequals (in the main series) across eight generations of game. Pokemon is portmanteau of Pocket Monster - the original name of the franchise - which effective describes the main feature of the game; collecting, training and battling a collection of monsters. In the original Game there were 150 pokemon, with a bonus pokemon available from Nintendo events. In the subsequent games this has grown to 890, with numerous variations and mega-evolutions increasing that number depending on the selection criteria. Amongst all the pokemon they can be categorised in many ways. One of the ways they are categorised is into four status subsets; Legendary, Mythical, Sub Legendary and Normal. These classifications are a reflection of the power and rarety and other factors of the individual pokemon.
+
+This project aims to select a machine learning model with which to predict the status of a pokemon based upon various data. The project was selected for several reasons:  
+
+1. The Data available was not perfect, which allowed me to practice some data wrangling.
+2. The problem is a classification problem, which I would like to work on post course, so an opportunity to gain some experience.
+3. Being a classification, it is a multiple classifcation problem rather than binary which increases the complexity somewhat.
+4. The dataset is large enough in both features and datapoints to be a valueable machine learning exercise, but managable for the hardware I have available.
+
+
+
+
+
+```{r echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(kernlab)) install.packages("kernlab", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+
+```
+
+## Preparing the dataset
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Features and Exploratory Data Analysis
+
+
+## Buliding a model
+
+## Results
+
+##Conclusions

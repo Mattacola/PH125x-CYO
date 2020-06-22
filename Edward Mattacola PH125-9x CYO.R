@@ -1,3 +1,5 @@
+####---------Setting up environment---------####
+
 #download packages if not present an load them
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
@@ -5,7 +7,7 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
 if(!require(kernlab)) install.packages("kernlab", repos = "http://cran.us.r-project.org")
 
-####---------Cleaning up the dataset
+####---------Cleaning up the dataset---------####
 
 #original dataset available from - 
 #https://www.kaggle.com/mariotormo/complete-pokemon-dataset-updated-090420?select=pokedex_%28Update_05.20%29.csv
@@ -95,7 +97,7 @@ check_na(fulldataset)
 
 #Now have a clean dataset
 
-####--------------Splitting into test and train sets.
+####---------Splitting into test and train sets.---------####
 
 #look at the columns and rows
 nrow(fulldataset)
@@ -109,7 +111,7 @@ testset <- fulldataset[test_index,]
 trainset <- fulldataset[-test_index,]
 
 
-####-------------------------------EDA
+####---------EDA---------####
 
 #look at the numbers of columns and rows
 nrow(trainset)
@@ -248,15 +250,17 @@ trainset %>%
   geom_point() + 
   scale_x_log10()
 
-######------------------------modelling
+####---------modelling---------####
 
-#--preparing for modelling--#
+##--preparing for modelling--##
 
 #remove unneeded columns
 trainset$pokedex_number <- NULL
 testset$pokedex_number <- NULL
 trainset$name <- NULL
 testset$name <- NULL
+
+#Need to account for factors and noramlise numeric variables for KNN and SVM
 
 #Creating dummy variables by converting factors to as many binary variables as here are categories.
 dummies_model <- dummyVars(status ~ ., data=trainset)
@@ -287,7 +291,7 @@ normtestset <- normtestset %>% mutate(status=testset$status)
 
 
 
-##----KNN model-----##
+##--KNN model--##
 
 #set the seed to enable replication
 set.seed(2, sample.kind = "Rounding")
@@ -303,9 +307,9 @@ knn_model$bestTune
 knn_acc <- max(knn_model$results$Accuracy)
 
 
-##--RF model--#
+##--RF model--##
 
-####WARNING this will take a while to run - avg 1 min per 100 trees of rf model on i7-8700T with 16GB RAM
+####!!!WARNING this will take a while to run - avg 1 min per 100 trees of rf model on i7-8700T with 16GB RAM!!!####
 
 #set the seed to enable replication, same seed to provide fair test between algorithms
 set.seed(2, sample.kind = "Rounding")
@@ -416,7 +420,7 @@ svm_r_model$bestTune
 #accuracy for comparison
 svm_r_acc <- max(svm_r_model$results$Accuracy) 
 
-##----model comparison----##
+##--model comparison--##
 
 #add the models and their accuracy into df for easy viewing
 comparison <- data.frame(model=c("KNN", "Random Forest", "Random Forest 1k", "Random Forest 2k", "SVM Linear", "SVM Radial"), 
@@ -424,7 +428,7 @@ comparison <- data.frame(model=c("KNN", "Random Forest", "Random Forest 1k", "Ra
 #veiw comparison
 comparison
 
-##----------results----------##
+####---------results---------####
 
 #random forest 100 trees rf_model_1k was best, will use to predict against test set
 #set seed for replication 

@@ -414,7 +414,7 @@ ggplot(svm_r_model)
 #best cost value
 svm_r_model$bestTune
 #accuracy for comparison
-svm_r_acc <- max(svm_r_model$results$Accuracy)
+svm_r_acc <- max(svm_r_model$results$Accuracy) 
 
 ##----model comparison----##
 

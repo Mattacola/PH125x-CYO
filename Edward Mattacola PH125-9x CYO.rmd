@@ -32,6 +32,7 @@ if(!require(randomForest)) install.packages("randomForest", repos = "http://cran
 if(!require(kernlab)) install.packages("kernlab", repos = "http://cran.us.r-project.org")
 if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
 
+
 ```
 
 ## Preparing the dataset

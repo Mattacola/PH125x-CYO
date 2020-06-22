@@ -1,0 +1,649 @@
+---
+title: "PH125.x Capstone PYO - Pokemon Classification"
+author: "Edward Mattacola"
+date: "15/06/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Introduction
+
+Pokemon is a global multimedia brand spanning games, TV, movies, books and others. Originally introduced to the world as a pair of games for the Nintendo Gameboy in 1996, it has since spawned 17 sequels (in the main series) across eight generations of game. Pokemon is portmanteau of Pocket Monster - the original name of the franchise - which effective describes the main feature of the game; collecting, training and battling a collection of monsters. In the original Game there were 150 Pokemon, with a bonus Pokemon available from Nintendo events. In the subsequent games this has grown to 890, with numerous variations and mega-evolutions increasing that number depending on the selection criteria. Amongst all the Pokemon they can be categorised in many ways. One of the ways they are categorised is into four status subsets; Legendary, Mythical, Sub Legendary and Normal. These classifications are a reflection of the power and rarity and other factors of the individual Pokemon.
+
+This project aims to select a machine learning model with which to predict the status of a Pokemon based upon various data. The project was selected for several reasons:  
+
+1. The Data available was not perfect, which allowed me to practice some data wrangling.
+2. The problem is a classification problem, which I would like to work on post course, so an opportunity to gain some experience.
+3. Being a classification, it is a multiple classification problem rather than binary which increases the complexity somewhat.
+4. The dataset is large enough in both features and data points to be a valuable machine learning exercise, but manageable for the hardware I have available.
+
+```{r echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(kernlab)) install.packages("kernlab", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(ggpubr)) install.packages("ggpubr", repos = "http://cran.us.r-project.org")
+
+
+
+#read csv into dataframe
+fulldataset <- read.csv(file = "datasets_593561_1119602_pokedex_(Update_05.20).csv")
+#remove unneeded columns X - a holdover column number, german and japanese names
+fulldataset$X <- NULL
+fulldataset$german_name <- NULL
+fulldataset$japanese_name <- NULL
+fulldataset[31:48] <- NULL
+fulldataset$abilities_number <- NULL
+fulldataset$ability_1 <- NULL
+fulldataset$ability_2 <- NULL
+fulldataset$ability_hidden <- NULL
+
+
+
+
+```
+
+## Methods and Analysis
+
+### Preparing the dataset
+
+Our dataset is sourced from Kaggle, available [here](https://www.kaggle.com/mariotormo/complete-pokemon-dataset-updated-090420?select=pokedex_%28Update_05.20%29.csv). Due to need to need for Kaggle login dataset is provided in my Git for this project, available [here](https://github.com/Mattacola/PH125x-CYO). To begin we will read the csv file into a data frame and have an initial look at the data.
+
+
+```{r eval=FALSE}
+#read csv into dataframe
+fulldataset <- read.csv(file = "datasets_593561_1119602_pokedex_(Update_05.20).csv")
+
+#check numbers of rows and columns
+ncol(fulldataset)
+nrow(fulldataset)
+
+# check the dataset names and classes
+str(fulldataset)
+```
+
+
+We can see that there are `r ncol(fulldataset)` columns and `r nrow(fulldataset)` rows in the dataset. The data is a mixture of factors, integers and numeric values. We will next remove some unneeded columns, the alternative language names and the X columns which is a representation of row number. The columns "against_x" refer to in game damage multipliers and are drawn from the Pokemon types fields, as such they are unneeded for our predictions.
+
+
+```{r eval=FALSE}
+#remove unneeded columns X - a holdover column number, german and japanese names, against_x values
+fulldataset$X <- NULL
+fulldataset$german_name <- NULL
+fulldataset$japanese_name <- NULL
+fulldataset[31:48] <- NULL
+```
+
+
+Looking to the abilities columns and using https://bulbapedia.bulbagarden.net/wiki/Main_Page, abilities are able to be changed by the trainer. Hidden abilities are also either dependent upon the random personality of a Pokemon or are  unique to the Pokemon dependent upon which information you read. As such the changeability of these and lack of wider clarity on hidden abilities means they will not translate well to a general predictive model and will be removed.
+
+
+```{r eval=FALSE}
+fulldataset$abilities_number <- NULL
+fulldataset$ability_1 <- NULL
+fulldataset$ability_2 <- NULL
+fulldataset$ability_hidden <- NULL
+```
+
+
+The Species column looks to contain some odd entries:
+
+
+```{r }
+fulldataset$species[1:10]
+```
+
+
+It seems that the accented 'e' in Pokemon has been formatted into a different character. Looking into the actual content of this column over half of the dataset has unique entries. Focusing on the less prevalent of our target variables we see this ratio is consistent throughout. Given the prevalence for unique entries, this potential feature is not expected to translate to a general model and will be removed from our dataset
+
+
+``` {r error=FALSE, message=FALSE}
+fulldataset %>% group_by(species) %>%
+  summarise(no=n()) %>%
+  group_by(no) %>%
+  summarise(n())
+
+fulldataset %>% 
+  filter(status%in%c("Legendary", "Mythical", "Sub Legendary")) %>%
+  group_by(status,species) %>%
+  summarise(no=n()) %>%
+  group_by(no) %>%
+  summarise(n())
+
+fulldataset$species <- NULL
+```
+
+
+When we look at the egg data, we find a similar issue. Various Pokemon sources including the previously linked wiki, state that egg information is inconsistent and not actually displayed in any game, only "mentioned canonically" in spin-off titles.
+As such the data in these field is deemed to be unreliable and will not be used. 
+
+
+```{r }
+fulldataset$egg_type_1 <- NULL
+fulldataset$egg_type_2 <- NULL
+fulldataset$egg_type_number <- NULL
+```
+
+
+Now we have removed the unneeded columns we will look a bit deeper and find NA entries, then decide how we will handles these. this little code will enable us to quickly check for NA entries:
+
+
+```{r }
+check_na <- function(x){
+  any(is.na(x))
+}
+
+check_na(fulldataset)
+```
+
+
+As this returns true we will use summary to look more closely:
+
+
+```{r }
+summary(fulldataset)
+```
+
+
+First we'll tackle weight which has only one NA. Looking at this data entry we will reference an external resource [here](https://bulbapedia.bulbagarden.net/wiki/Eternatus_%28Pok%C3%A9mon%29)  . This shows the Pokemon with the missing weight is an evolution. To resolve this we will multiply the pre-evolution weight by 5, the same factor as the height increase.
+
+
+``` {r }
+fulldataset %>% filter(is.na(weight_kg))
+
+fulldataset$weight_kg <- replace_na(fulldataset$weight_kg, 950*5)
+```
+
+
+Looking to catch rate, base_friendship and Base_experience, all have 104 missing entries. Different sites offer different values and explanations for these variables. With no reliable consistent sources of information on these, and no way to know how these may affect our modelling if we choose either replacement with minimum , mean, or out of scope values, for example, we will remove these features. The same will apply to the percentage male with 236 NAs.
+
+
+```{r }
+fulldataset[17:19] <- NULL
+fulldataset$percentage_male <- NULL
+```
+
+
+Next we will look to egg cycles where is again one NA entry. Looking at that entry we can see that it is part of a set of Pokemon. Investigating this shows that the growth rate entry for this Pokemon is also blank; "". This can also be seen in the previous summary of the dataset. We will update the egg cycles and growth rate entries to match the other Pokemon of the set. Finally we will re-factor the growth rate column to remove the erroneous "" entry. 
+
+
+```{r }
+fulldataset[653,]$egg_cycles <- 20
+fulldataset[653,]$growth_rate <- "Medium Slow"
+fulldataset$growth_rate <- factor(fulldataset$growth_rate)
+```
+
+
+Another check of the NAs shows that we now have a complete dataset. Note that the Pokemon number and names fields have been left in the dataset as they may prove useful for looking at Pokemon in exploratory data analysis but will not be used in modelling. Our tidy dataset has `r nrow(fulldataset)` rows of data across `r ncol(fulldataset)` columns. The final step before commencing analysis is splitting the dataset into training and test datasets. The test dataset will only be used for final results. Due to relatively small dataset will not split into three sets - test, train and validation - to enable modelling and intermediate testing, and final testing respectively, and will instead use cross validation on the training set to tune models.
+
+The data will be split using the createdatapartion function from the caret package to ensure spread of the target classifications across the sets. We will use a 9:1 training to test ratio as we want as much data to work with to train the models with only a small total dataset, and still enough to prove a valuable final test. To enable reproduction of the results will for accurate assessment we will set the seed.
+
+
+```{r error=FALSE, message=FALSE, warning=FALSE}
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(fulldataset$status, times = 1, p = 0.1, list = FALSE)
+testset <- fulldataset[test_index,]
+trainset <- fulldataset[-test_index,]
+```
+
+
+### Exploratory Data Analysis
+
+Our newly prepared training dataset has `r nrow(trainset)` rows and `r ncol(trainset)` columns, and our test set `r nrow(testset)` and `r ncol(testset)`. Looking at the head (split for visibility) we have:
+
+
+```{r echo=FALSE}
+head(trainset[1:6]) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+head(trainset[7:12]) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+head(trainset[13:18]) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+```
+
+
+The target of our classification project is status. We will see how many of each are in our training set:
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trainset %>% 
+  group_by(status) %>% 
+  summarise(`number of pokemon`=n(), percentage=n()/nrow(trainset)*100) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+```
+
+
+The normal category far outweighs the other categories. Mythical with the lowest number of appearances may be the most difficult to effectively train a model with. The features in the dataset, as can be seen in the head, can be generally split into two groups: descriptive [1:9] and ability [10:21]. To initial explore we will look at the mean value of the combat ability scores of the statuses and see if there is a pattern.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trainset %>% 
+  group_by(status) %>% 
+  summarise(`Mean total points`=mean(total_points),
+            `Mean hp`=mean(hp),
+            `Mean attack`=mean(attack),
+            `Mean defense`=mean(defense)) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+trainset %>% 
+  group_by(status) %>% 
+  summarise(`Mean sp_attack`=mean(sp_attack),
+            `Mean sp_defense`=mean(sp_defense),
+            `Mean speed`=mean(speed)) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+```
+
+
+From this we can see that the mean for legendary Pokemon have, with the exception of speed, higher mean values than the other statuses, and Normal Pokemon have the lowest, with the mythical and sub legendary sharing the second and third positions across the values.
+
+To better visualise this we will look at some graphs.
+
+
+```{r echo=FALSE}
+total_points <- trainset %>% 
+  ggplot(aes(status, total_points, fill=status)) + 
+  geom_boxplot()
+
+hp <- trainset %>% 
+  ggplot(aes(status, hp, fill=status)) + 
+  geom_boxplot() +
+  theme(legend.position = "none")
+
+attack <- trainset %>% 
+  ggplot(aes(status, attack, fill=status)) + 
+  geom_boxplot() +
+  theme(legend.position = "none")
+
+defense <- trainset %>% 
+  ggplot(aes(status, defense, fill=status)) + 
+  geom_boxplot() +
+  theme(legend.position = "none")
+
+sp_attack <- trainset %>% 
+  ggplot(aes(status, sp_attack, fill=status)) + 
+  geom_boxplot() +
+  theme(legend.position = "none")
+
+sp_defense <- trainset %>% 
+  ggplot(aes(status, sp_defense, fill=status)) + 
+  geom_boxplot() +
+  theme(legend.position = "none")
+
+speed <- trainset %>% 
+  ggplot(aes(status, speed, fill=status)) + 
+  geom_boxplot() +
+  theme(legend.position = "none")
+
+total_points
+
+ggarrange(ggarrange(hp, attack, ncol=2),
+          ggarrange(defense, sp_attack, ncol=2),
+          ggarrange(sp_defense, speed, ncol=2),
+          nrow=3)
+```
+
+
+The graphs show the data from the table more clearly but highlight some outliers in the data, particularly in the normal and legendary status categories. The differentiation between the various ability scores however shows that together they may be good predictors of status.
+
+taking this further we will look at how these have changed over the generations of Pokemon. We will focus on the total points value and separate by the generations values.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trainset %>%
+  group_by(status, generation) %>%
+  summarise(mean_total_points = mean(total_points)) %>%
+  ggplot(aes(generation, mean_total_points, color=status)) +
+  geom_line()
+```
+
+
+We can see that normal status is fairly consistent, the others statuses dip in gen 7, and the mean total is distinct for each generation. As such this could be a useful feature along with the stats to select which status more effectively.
+
+Moving to a descriptive feature, we will look at type number, type one and type 2. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE }
+trainset %>%
+  group_by(status,type_number) %>%
+  summarise(n()) %>%
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+```
+
+
+The numbers are fairly evenly split across the status values. we will therefore look at the specifics of type 1 and type 2.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trainset %>%
+  group_by(status, type_1) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(type_1, count, fill=status)) +
+  geom_bar(stat = "Identity") +
+  theme(axis.text.x = element_text(angle = 90))
+
+trainset %>%
+  group_by(status, type_2) %>%
+  summarise(count=n()) %>%
+  ggplot(aes(type_2,count, fill=status)) +
+  geom_bar(stat="Identity") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+The specifics show no standout unique elements, however several of the types are only utilised with two status groupings. These therefore may be a good discriminative feature for splitting the status groups if, for example the points data cannot effectively pinpoint the status. Since the type number data offers no value over the more descriptive, we will remove this from our datasets.
+
+
+```{r}
+trainset$type_number <- NULL
+testset$type_number <- NULL
+```
+
+
+The next feature we will look at is egg cycles. From [Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Egg_cycle) we can see that an egg cycle are the amount of times a specific number of in game steps must be taken before an egg of the Pokemon hatches. Looking at the following graph we can see that higher egg cycle are reserved for non normal status Pokemon. As such this feature could be a powerful initial separator in, for example, a decision tree model.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trainset %>% 
+  group_by(status, egg_cycles) %>%
+  summarise(count=n()) %>% 
+  ggplot(aes(egg_cycles,count, color=status )) +
+  geom_point()
+```
+
+
+Height and weight are descriptive features of Pokemon. Across the games Pokemon come in all shapes and sizes. We will plot these against each other and color by status to see if there is a pattern.
+
+
+```{r echo=FALSE}
+trainset %>% 
+  ggplot(aes(height_m, weight_kg, color=status)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  scale_y_log10()
+```
+
+
+From this we can see that mythical status Pokemon are spread through the range, however there appears to be visible groupings for normal, sub legendary and legendary statuses. 
+
+
+The final feature we will look at independently is growth rate. Growth rate is the amount of experience that a Pokemon requires to reach level 100 in games. The following graph shows that, similar to egg cycles, non-normal Pokemon are reserved the slow and medium-slow categories.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trainset %>% 
+  group_by(status, growth_rate) %>% 
+  summarise(count=n()) %>% 
+  ggplot(aes(growth_rate, count, color=status)) +
+  geom_point()
+```
+
+
+From looking at the features independently we can see that there is potential predictive power in them. Egg cycles and growth rate for example can split effectively narrow the status groups being looked at, and the points scores then differentiate more between the resulting groups. As a final piece of exploratory analysis we will look at the following graphs which combine these key features and highlight further the groupings and correlations. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+ggarrange(ggarrange(trainset %>%
+                      ggplot(aes(growth_rate, egg_cycles, color=status)) +
+                      geom_point() +
+                      theme(legend.position = "none") +
+                      theme(axis.text.x = element_text(angle = 90)) +
+                      scale_x_discrete(labels=NULL),
+                    trainset %>%
+                      ggplot(aes(growth_rate, total_points, color=status)) +
+                      geom_point() +
+                      scale_y_log10() +
+                      theme(legend.position = "none") +
+                      theme(axis.text.x = element_text(angle = 90)) +
+                      scale_x_discrete(labels=NULL),
+                    ncol=2),
+          ggarrange(trainset %>%
+                      ggplot(aes(egg_cycles, total_points, color=status)) +
+                      geom_point() +
+                      theme(legend.position = "none") +
+                      scale_y_log10(),
+                    trainset %>%
+                      ggplot(aes(height_m*weight_kg, total_points, color=status)) +
+                      geom_point() +
+                      theme(legend.position = "none") +
+                      scale_x_log10() +
+                      scale_y_log10(),
+                    ncol=2),
+          ggarrange(trainset %>%
+                      ggplot(aes(height_m*weight_kg, egg_cycles, color=status)) +
+                      geom_point() +
+                      theme(legend.position = "none") +
+                      scale_x_log10(),
+                    trainset %>%
+                      ggplot(aes(height_m*weight_kg, growth_rate, color=status)) +
+                      geom_point() +
+                      theme(legend.position = "none") +
+                      scale_x_log10()+
+                      scale_y_discrete(labels=NULL),
+                    ncol=2),
+          nrow=3)
+
+```
+
+
+### Modelling selection
+
+
+This is a multiple classification task. We will explore three methods for modelling;, KNN, Random Forest(rf) and Support vector Machine(svm). The selection of these is informed by two factors 1) they are all capable of multiple classification, 2) they are from different 'families' of algorithm. KNN was chosen to display the capabilities taught in the PH125.9x course and will be tuned by k, the number of neighbours considered, RF will be used for the same reason as it was shown to be the top performing general use case algorithm by Delgado(2014), second by Caruana(20XX), and best (in binary classifications it must be stated), by Wainer et. al (2016). The RF model will be tuned using mtry - number of random features considered at each split - and ntree. The Choice of SVM was to push myself to learn about a different method to those on the course and because in the aforementioned papers SVM were highly rated at completing this type of task. The SVM will be tried with a liner and radial kernal, and tuned using cost. 
+
+To enable knn and SVM we need to normalise the data and account for factors. This is because different scales can warp the algorithm. We will therefore perform one-hot encoding, to create unique variables of 1 or 0 for each factor and normalise the data. These values from the training data will then be used to account for the factors on the test set, and the min/max of the training data used to normalise the numeric values. This will prevent inadvertent improvement of the training data from the test set by accounting for factors and normalising individually or as a whole dataset.
+
+
+### Preparing for modelling  
+
+#### One Hot Encoding  
+
+Our first step is to remove the names and pokedex number columns from the training and test datasets as they will not be used. 
+
+
+```{r }
+trainset$pokedex_number <- NULL
+testset$pokedex_number <- NULL
+trainset$name <- NULL
+testset$name <- NULL
+```
+
+
+Next we will use the dummyVars function from the caret package to create dummy variables for our factor columns. This will essentially turn each factor into a binary variable. Then we will apply this to the training set to create a matrix removing the factor columns of the training set and inserting the binary variable columns. We will then convert the matrix to a data frame. Using the predict function we will perform the same actions on the test set.
+
+
+```{r message=FALSE, warning=FALSE}
+dummies_model <- dummyVars(status ~ ., data=trainset)
+normtrainset <- predict(dummies_model, newdata = trainset)
+normtrainset <- data.frame(normtrainset)
+
+normtestset <- predict(dummies_model, newdata = testset)
+normtestset <- data.frame(normtestset)
+```
+
+
+#### Normalisation
+
+To Normalise the data we will use the preProcess function from the caret package. This works in a similar way to the dummyVars function. For the numeric variables in our dataset a normalisation model will be made using the min and max values. The predict function will then apply this to the training dataset and the test set. They will then be converted back to data frames. We will finally add the original status columns from the training and test datasets to their respective normalised sets.
+
+```{r message=FALSE, warning=FALSE}
+normalise_model <- preProcess(normtrainset, method='range')
+normtrainset <- predict(normalise_model, newdata = normtrainset)
+normtrainset <- data.frame(normtrainset)
+
+normtestset <- predict(normalise_model, newdata = normtestset)
+normtestset <- data.frame(normtestset)
+
+normtrainset<- normtrainset %>% mutate(status=trainset$status)
+normtestset <- normtestset %>% mutate(status=testset$status)
+```
+
+
+### Modelling  
+
+#### KNN  
+
+
+For each of the models we produce we will set the seed to 2. This will enable assessors to replicate our results and a fair comparison between the models. A control variable will be used across the models which will specify 10 fold cross validation repeated three times be used to assess the accuracy of the model with the different model variables (k in this instance). For the KNN tuning we will use the tuneLength parameter of the caret train function to select 20 values of k starting with 5 and increasing in increments of 2.
+
+
+```{r warning=FALSE, message=FALSE}
+set.seed(2, sample.kind = "Rounding")
+control <- trainControl(method="repeatedcv",number=10, repeats = 3)
+knn_model <- train(status~., method="knn", data=normtrainset, trControl=control, tuneLength=20)
+ggplot(knn_model)
+knn_acc <- max(knn_model$results$Accuracy)
+```
+
+
+From the graph we can see that the optimal value of k for our model is `r knn_model$bestTune`, with an accuracy of 
+`r knn_acc`.  
+  
+  
+#### Random Forest  
+
+Random forest is a resource intensive modelling algorithm. As stated we will use the same repeated 10 fold cross validation across our models. For our random forest models we will tune mtry - the number of randomly selected variables to be considered at each point in the generated trees. Again we will use the tuneLength parameter to tune across 20 values starting at two and increasing by 3 each time. This will be repeated three times, the second and third iterations setting an ntree value - the number of random trees generated - of 1000 and 2000. The default for the first model is 500. From these we will have all combinations of tuning parameters.
+
+
+```{r message=FALSE, warning=FALSE}
+set.seed(2, sample.kind = "Rounding")
+rf_model <- train(status~., method="rf", data=normtrainset, trControl=control, tuneLength=20)
+ggplot(rf_model)
+rf_acc <- max(rf_model$results$Accuracy)
+
+set.seed(2, sample.kind = "Rounding")
+rf_model_1k <- train(status~., method="rf", data=normtrainset,ntree=1000, trControl=control, tuneLength=20)
+ggplot(rf_model_1k)
+rf_1k_acc <- max(rf_model_1k$results$Accuracy)
+
+set.seed(2, sample.kind = "Rounding")
+rf_model_2k <- train(status~., method="rf", data=normtrainset,ntree=2000, trControl=control, tuneLength=20)
+ggplot(rf_model_2k)
+rf_2k_acc <- max(rf_model_2k$results$Accuracy)
+
+```
+
+
+Of our tuned random forest models, the best cross validated accuracy came from the 1000 ntree model with mtry of `r rf_model_1k$bestTune`. The accuracy of `r rf_1k_acc` was just `r rf_1k_acc-rf_2k_acc` greater than the 2000 ntree model.
+
+
+#### SVM  
+
+We will try the SVM algorithm with two different Kernels, and tune for cost. SVM works essentially by creating a decision boundary in a higher dimensionality than the data. Different kernels enable this decision boundary to be non linear as standard. We will try a linear and a radial kernel. The cost training parameter is a miss-classification penalty which can be applied to better decide a decision boundary.
+
+To tune the cost we will being by tuning from 0.0001 to 100, an initial value drawn from reading stacked overflow content regarding SVMs. Following this we will tune more precisely.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(2, sample.kind = "Rounding")
+svm_l_model <- train(status~.,
+                     method="svmLinear",
+                     data=normtrainset,
+                     trControl=control,
+                     tuneGrid=data.frame(C=(0.0001 * 10^(seq(0,6,2)))))
+ggplot(svm_l_model)
+```
+
+From this we can see that a cost value of `r svm_l_model$bestTune` giving and accuracy of `r max(svm_l_model$results$Accuracy)` was our best initial model, we will now refine that and tune for 30 values between 0.001 and 0.2 to find our best linear model.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(2, sample.kind = "Rounding")
+svm_l_model <- train(status~., 
+                     method="svmLinear", 
+                     data=normtrainset, 
+                     trControl=control, tuneGrid=data.frame(C=seq(0.001,0.2,length=30)))
+ggplot(svm_l_model)
+svm_l_acc <- max(svm_l_model$results$Accuracy)
+```
+
+Our final tuning improves on the model and uses a cost value of `r svm_l_model$bestTune` to present an accuracy of `r svm_l_acc`. This process will be repeated using the radial kernal.
+
+
+```{r message=FALSE, warning=FALSE}
+set.seed(2, sample.kind = "Rounding")
+svm_r_model <- train(status~.,
+                     method="svmRadialCost",
+                     data=normtrainset,
+                     trControl=control,
+                     tuneGrid=data.frame(C=(0.0001 * 10^(seq(0,6,2)))))
+ggplot(svm_r_model)
+
+set.seed(2, sample.kind = "Rounding")
+svm_r_model <- train(status~., 
+                     method="svmRadialCost", 
+                     data=normtrainset, 
+                     trControl=control, tuneGrid=data.frame(C=seq(0.1,2,length=30)))
+
+ggplot(svm_r_model)
+svm_r_acc <- max(svm_r_model$results$Accuracy)
+```
+
+
+Here we see our best result from the radial kernel gives an accuracy of `r svm_r_acc` using a cost of `r svm_r_model$bestTune`.
+
+### Model Comparison
+
+
+```{r echo=FALSE}
+comparison <- data.frame(model=c("KNN", "Random Forest", "Random Forest 1k", "Random Forest 2k", "SVM Linear", "SVM Radial"), 
+                         accuracy=c(knn_acc, rf_acc, rf_1k_acc, rf_2k_acc, svm_l_acc, svm_r_acc))
+
+comparison %>% 
+  kable(format="latex", booktabs=TRUE) %>%
+  kable_styling(position = "center")
+
+```
+
+
+From our models we can see that random forest models performed best, then the SVM, then KNN. This order follows the conclusions of Delgado(2014), Caruana(20XX), and Wainer et. al (2016) which were used in the selection of algorithms for this project. 
+
+Of the random forest models, the 1000 ntree model performed the best with marginal gains over the 2000 ntree model. Looking into this model more we can see that the top 5 most important variables are egg cycles, total points, height, weight and hp. This reflects some of the patterns seen in the exploratory graphs and the grouping and status separation available through these features.
+
+
+```{r echo=FALSE}
+varImp(rf_model_1k)
+```
+
+
+As it was our best performing model when assessed using cross validation, it is the model we will recommend to be tested.
+
+## Results
+
+To assess the effectiveness of our model we will use it to predict the status of Pokemon in the test set. A confusion matrix will then be to show the overall accuracy and investigate specifics of the model performance.
+
+
+```{r }
+set.seed(3, sample.kind = "Rounding")
+final_predictions <- predict(rf_model_1k, normtestset)
+confusionMatrix(data = final_predictions, reference = testset$status)
+```
+
+
+Our model performs well with an overall accuracy of `r  confusionMatrix(data = final_predictions, reference = testset$status)$overall["Accuracy"]`. Of the predictions made the incorrect ones were all Mythical status Pokemon. As we saw through the data exploration, this was the status group with the fewest entries in the training dataset. The Mythical and Sub legendary statuses were also the ones which had less distinct groupings throughout the exploration.
+
+## Conclusion
+
+This project aimed to develop a model to classify a Pokemon into the correct status group based upon a set of features. Based upon the multiple classification requirement and informed by literature, KNN, Random forest and SVM models were tuned to accomplish this. Our Random forest model utilisting 1000 trees and considering 32 random features at each junction performed best in cross validation tuning. When applied to the test set for a final result it achieved an overall accuracy of `r  confusionMatrix(data = final_predictions, reference = testset$status)$overall["Accuracy"]`. 
+
+Further research could build on this by applying the model to the next generation of Pokemon to gauge performance, and then 
+investigate improvements. Alternatively a wider range of algorithms could be applied to the existing training set, to further investigate the impact of different families of algorithm. Following the reasoning behind the selection for the algorithms tried here, we would recommend appraisal of a wider range of SVM kernels, neural networks and C50 ensembles thereby continuing the general order of the findings from Delgado(2014).
+
+
+## Bibliography
+
+Caruana, R. (2006). An Empirical Comparison of Supervised Learning Algorithms Rich. Icml, 161–168. https://doi.org/10.1145/1143844.1143865  
+
+Fernández-Delgado, M., Cernadas, E., Barro, S., & Amorim, D. (2014). Do we need hundreds of classifiers to solve real world classification problems? Journal of Machine Learning Research, 15, 3133–3181. https://doi.org/10.1117/1.JRS.11.015020  
+
+Wainer, J. (2016). Comparison of 14 different families of classification algorithms on 115 binary datasets. 2014. http://arxiv.org/abs/1606.00930  
